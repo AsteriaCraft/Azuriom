@@ -1,3 +1,4 @@
+# Використовуємо PHP 8.3-FPM Alpine для кращої продуктивності
 FROM php:8.3-fpm-alpine
 
 # Встановлення системних залежностей
@@ -7,32 +8,61 @@ RUN apk add --no-cache \
     zip \
     unzip \
     libzip-dev \
-    postgresql-dev \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
+    icu-dev \
+    oniguruma-dev \
+    libxml2-dev \
+    postgresql-dev \
+    mysql-client \
     openssl \
-    nodejs \
-    npm
+    ca-certificates \
+    supervisor \
+    && rm -rf /var/cache/apk/*
 
-# Встановлення PHP розширень
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg
-RUN docker-php-ext-install pdo pdo_pgsql pdo_mysql bcmath zip gd
+# Встановлення PHP розширень згідно з вимогами Azuriom
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure intl \
+    && docker-php-ext-install -j$(nproc) \
+        bcmath \
+        ctype \
+        curl \
+        gd \
+        intl \
+        mbstring \
+        pdo \
+        pdo_mysql \
+        pdo_pgsql \
+        tokenizer \
+        xml \
+        xmlwriter \
+        zip
 
 # Встановлення Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Копіювання entrypoint скрипту
+# Встановлення Node.js і npm (для frontend assets)
+RUN apk add --no-cache nodejs npm
+
+# Копіювання entrypoint і конфігурацій
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/php.ini /usr/local/etc/php/conf.d/azuriom.ini
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Встановлення робочої директорії
 WORKDIR /var/www/azuriom
 
-# Важливо: НЕ копіюємо файли тут, оскільки вони будуть перезаписані volume mount
+# Встановлення правильних прав користувача
+RUN addgroup -g 1000 azuriom \
+    && adduser -D -s /bin/sh -u 1000 -G azuriom azuriom \
+    && chown -R azuriom:azuriom /var/www
 
-# Перемикання на root для entrypoint (для встановлення залежностей)
-USER root
+# Створення необхідних директорій
+RUN mkdir -p /var/www/azuriom/storage/logs \
+    && mkdir -p /var/www/azuriom/storage/app/public \
+    && mkdir -p /var/www/azuriom/bootstrap/cache \
+    && chown -R azuriom:azuriom /var/www/azuriom
 
 EXPOSE 9000
 
